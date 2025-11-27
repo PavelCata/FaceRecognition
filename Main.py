@@ -35,19 +35,20 @@ while cap.isOpened():
     ret, frame = cap.read()
     #cut frame to 250x250
     frame = frame[170:420, 190:440, :]
-
+    key = cv2.waitKey(1) & 0xFF
     #anchor
-    if cv2.waitKey(1) & 0xFF == ord('a'):
+    if key == ord('a'):
         imgname = os.path.join(ANC_PATH,'{}.jpg'.format(uuid.uuid1()))
         cv2.imwrite(imgname,frame)
 
     #pozitive
-    if cv2.waitKey(1) & 0xFF == ord('p'):
+    if key == ord('p'):
         imgname = os.path.join(POST_PATH, '{}.jpg'.format(uuid.uuid1()))
         cv2.imwrite(imgname, frame)
 
+    #quit
     cv2.imshow('Image Collection',frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    if key == ord('q'):
         break
 cap.release()
 cv2.destroyAllWindows()
@@ -81,16 +82,26 @@ def preprocess_twin(input_img,validation_img,label):
 data = data.map(preprocess_twin)
 data = data.cache()
 data = data.shuffle(buffer_size=1024)
-#samples = data.as_numpy_iterator()
-#samp = samples.next()
-#plt.imshow(samp[1])
-#plt.show()
-#plt.imshow(samp[0])
-#plt.show()
-#print(samp[2])
+
+# samples = data.as_numpy_iterator()
+# samp = samples.next()
+# #create 2 subplots to see anchor and positive/negative
+# fig, ax = plt.subplots(1, 2, figsize=(6,3))
+# ax[0].imshow(samp[0])
+# ax[0].set_title("Anchor")
+# ax[0].axis('off')
+# ax[1].imshow(samp[1])
+# ax[1].set_title("Positive/Negative")
+# ax[1].axis('off')
+# plt.show()
+
+# #print label 0 - negative sample, 1 - positive sample
+# print(samp[2])
+
 
 #training partition
-train_data = data.take(round(len(data)*0.7))
+size = tf.data.experimental.cardinality(data).numpy()
+train_data = data.take(round(size*0.7))
 train_data = train_data.batch(16)
 train_data = train_data.prefetch(8)
 #train_samples = train_data.as_numpy_iterator()
@@ -98,8 +109,64 @@ train_data = train_data.prefetch(8)
 #print(len(train_samp[0]))
 
 #testing partition
-test_data = data.skip(round(len(data)*0.7))
-test_data = test_data.take(round(len(data)*0.3))
+test_data = data.skip(round(size*0.7))
+test_data = test_data.take(round(size*0.3))
 test_data = test_data.batch(16)
 test_data = test_data.prefetch(8)
-#PART 4
+
+
+#Build Embedding Model
+#Convolution -> MaxPooling -> Conv -> MaxPooling -> Conv -> MaxPooling -> Conv -> Flatten -> Dense
+#Pipeline for feature extraction
+def make_embedding():
+    inp = Input(shape = (100,100,3), name  = 'inp_image')
+    #intern while
+    #learns simple details-> edges, lines, corners
+    conv1 = Conv2D(64,(10,10),activation='relu')(inp)
+    mp1 = MaxPooling2D(64,(2,2), padding = 'same')(conv1)
+    
+    #learns facial features -> curbs of the face, textures, shapes
+    conv2 = Conv2D(128,(7,7),activation='relu')(mp1)
+    mp2 = MaxPooling2D(64,(2,2), padding = 'same')(conv2)
+    
+    #complex features -> the shape of nose, eyes, lips
+    conv3 = Conv2D(128,(4,4),activation='relu')(mp2)
+    mp3 = MaxPooling2D(64,(2,2), padding = 'same')(conv3)
+    
+    #fine details -> distance between eyes, nose tip to chin
+    conv4 = Conv2D(256,(4,4),activation='relu')(mp3)
+    
+    flat = Flatten()(conv4)
+    dense = Dense(4096,activation='sigmoid')(flat)
+    # Numeric code of the image
+    #the model has an input image and outputs a vector of 4096 numbers
+    return Model(inputs=inp,outputs=dense, name='embedding_model')
+
+#print(make_embedding().summary())
+
+
+#Distance Layer for the siamese network
+class L1Dist(Layer):
+    def __init__(self, **kwargs):
+        super().__init__()
+
+    #similarity calculation
+    def call(self, input_embedding, validation_embedding): #input_embedding - anchor, validation_embedding - positive/negative
+        return tf.math.abs(input_embedding - validation_embedding)
+    
+
+embedding = make_embedding()
+def make_siamese_model():
+    input = Input(name='input_img', shape=(100,100,3))
+    validation = Input(name='validation_img', shape=(100,100,3))
+    
+    siamese_layer = L1Dist()
+    siamese_layer._name = 'distance'
+    distances = siamese_layer(embedding(input), embedding(validation))
+    
+    classifier = Dense(1, activation='sigmoid')(distances)
+
+    return Model(inputs=[input, validation], outputs=classifier, name='SiameseNetwork')
+
+siamese_model = make_siamese_model()
+print(siamese_model.summary())
