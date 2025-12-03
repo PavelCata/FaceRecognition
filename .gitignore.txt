@@ -1,0 +1,54 @@
+# ============================
+# PERSONAL DATA (DO NOT UPLOAD)
+# ============================
+
+# Image datasets
+data/
+*.jpg
+*.jpeg
+*.png
+
+# Training checkpoints (may contain biometric info)
+training_checkpoints/
+*.ckpt
+*.ckpt.data-*
+*.ckpt.index
+checkpoint
+
+# Saved models (contain embeddings learned from your face)
+*.h5
+saved_model/
+models/
+model/
+*.pb
+
+# ============================
+# PYTHON STANDARD IGNORE
+# ============================
+
+# Virtual environment
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS garbage
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# ============================
+# TENSORFLOW / KERAS TEMP FILES
+# ============================
+
+*.tfevents.*

@@ -64,7 +64,7 @@ def preprocess(file_path):
     img = img / 255.0
     return img
 
-img = preprocess('data\\anchor\\d0a47191-bfff-11f0-899a-d43b04945308.jpg')
+img = preprocess('data\\anchor\\84fea2e5-d05e-11f0-a710-d43b04945308.jpg')
 #plt.imshow(img)
 #plt.show()
 
@@ -169,4 +169,50 @@ def make_siamese_model():
     return Model(inputs=[input, validation], outputs=classifier, name='SiameseNetwork')
 
 siamese_model = make_siamese_model()
-print(siamese_model.summary())
+#print(siamese_model.summary())
+
+binary_cross_loss = tf.losses.BinaryCrossentropy()
+opt = tf.keras.optimizers.Adam(1e-4)
+
+checkpoint_dir = './training_checkpoints'
+checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
+checkpoint = tf.train.Checkpoint(opt=opt, siamese_model=siamese_model)
+
+@tf.function
+def train_step(batch):
+    #record all operations
+    with tf.GradientTape() as tape:
+        #get anchor and positive/negative image
+        X = batch[:2]
+        #get label
+        y = batch[2]
+        #forward pass
+        yhat = siamese_model(X, training=True)
+        #calculate loss
+        loss = binary_cross_loss(y, yhat)
+    pass 
+    print(loss)
+
+    grad = tape.gradient(loss, siamese_model.trainable_variables)
+    opt.apply_gradients(zip(grad, siamese_model.trainable_variables))
+    return loss
+
+def train(data, EPOCHS):
+    #loop over epochs
+    #Epochs is the number of times the model sees the data
+    for epoch in range(1,EPOCHS+1):
+        print("\n Epoch {}/{}".format(epoch,EPOCHS))
+        progbar = tf.keras.utils.Progbar(len(data))
+
+        #loop over each batch
+        for idx, batch in enumerate(data):
+            loss = train_step(batch)
+            progbar.update(idx+1, [("loss", loss)])
+
+        #checkpoints
+        if epoch % 10 == 0:
+            checkpoint.save(file_prefix=checkpoint_prefix)
+
+
+EPOCHS = 50
+train(train_data, EPOCHS)
